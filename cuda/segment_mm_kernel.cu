@@ -12,7 +12,7 @@
 #include <vector>
 
 // hyper parameter 
-constexpr int BLOCK_SIZE = 16; 
+constexpr long BLOCK_SIZE = 16; 
 
 namespace {
 
@@ -21,19 +21,19 @@ __global__ void tiled_mm_kernel(
     const scalar_t* __restrict__ a, 
     const scalar_t* __restrict__ b,
     scalar_t* __restrict__ c,
-    int N, int M, int D) {
-    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+    long N, long M, long D) {
+    __shared__ scalar_t As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ scalar_t Bs[BLOCK_SIZE][BLOCK_SIZE];
     
-    int block_row = blockIdx.x;
-    int block_col = blockIdx.y;
+    long block_row = blockIdx.x;
+    long block_col = blockIdx.y;
 
-    float temp = 0.0f;
-    int row = threadIdx.x;
-    int col = threadIdx.y;
+    scalar_t temp = 0.0f;
+    long row = threadIdx.x;
+    long col = threadIdx.y;
 
     #pragma unroll
-    for (int k = 0; k <= (D / BLOCK_SIZE); ++k) {
+    for (long k = 0; k <= (D / BLOCK_SIZE); ++k) {
         // load 
         if ((BLOCK_SIZE*k + col) >= D)
             As[row][col] = 0.0f;
@@ -47,7 +47,7 @@ __global__ void tiled_mm_kernel(
 
         __syncthreads();
         #pragma unroll
-        for (int d = 0; d < BLOCK_SIZE; ++d)
+        for (long d = 0; d < BLOCK_SIZE; ++d)
             temp += As[row][d]*Bs[d][col];
         
         __syncthreads();
@@ -65,22 +65,22 @@ torch::Tensor segment_mm_cuda_forward(
     const torch::Tensor& mat_B,
     const torch::Tensor& segment_id_A,
     const torch::Tensor& segment_id_B) {
-    const int N = mat_A.size(0);
-    const int M = mat_B.size(0);
-    const int D = mat_A.size(1);
+    const long N = mat_A.size(0);
+    const long M = mat_B.size(0);
+    const long D = mat_A.size(1);
 
     // cudaSetDevice(mat_A.get_device());
     // cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     auto count_A = segment_id_A.bincount();
     auto count_B = segment_id_B.bincount();
-    auto accessor_A = count_A.accessor<int, 1>();
-    auto accessor_B = count_B.accessor<int, 1>();
+    auto accessor_A = count_A.accessor<long, 1>();
+    auto accessor_B = count_B.accessor<long, 1>();
     
     // allocate C
-    int sum = 0;
-    const int size = count_A.size(0);
-    for (int i = 0; i < size; ++i) {
+    long sum = 0;
+    const long size = count_A.size(0);
+    for (long i = 0; i < size; ++i) {
         auto N_i = accessor_A[i];
         auto M_i = accessor_B[i];
         sum += N_i * M_i;
@@ -88,9 +88,9 @@ torch::Tensor segment_mm_cuda_forward(
     auto C = torch::zeros({sum});
 
     // loop k times, launch k kernels 
-    int start_A = 0, start_B = 0, start_C = 0;    
+    long start_A = 0, start_B = 0, start_C = 0;    
     dim3 dim_block(BLOCK_SIZE, BLOCK_SIZE);
-    for (int i = 0; i < size; ++i) {
+    for (long i = 0; i < size; ++i) {
         auto N_i = accessor_A[i];
         auto M_i = accessor_B[i];
         
@@ -123,27 +123,27 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
     const torch::Tensor& mat_B,
     const torch::Tensor& segment_id_A, 
     const torch::Tensor& segment_id_B) {
-    const int N = mat_A.size(0);
-    const int M = mat_B.size(0);
-    const int D = mat_A.size(1);
+    const long N = mat_A.size(0);
+    const long M = mat_B.size(0);
+    const long D = mat_A.size(1);
 
     auto dA = torch::zeros({N, D});
     auto dB = torch::zeros({M, D});
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
     // cudaSetDevice(mat_A.get_device());
     // cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     auto count_A = segment_id_A.bincount();
     auto count_B = segment_id_B.bincount();
-    auto accessor_A = count_A.accessor<int, 1>();
-    auto accessor_B = count_B.accessor<int, 1>();
+    auto accessor_A = count_A.accessor<long, 1>();
+    auto accessor_B = count_B.accessor<long, 1>();
 
     // calculate dA & dB
-    int size = count_A.size(0);
-    int start_A = 0, start_B = 0;
-    int start_dA = 0, start_dB = 0, start_dC = 0;
+    long size = count_A.size(0);
+    long start_A = 0, start_B = 0;
+    long start_dA = 0, start_dB = 0, start_dC = 0;
     dim3 dim_block(BLOCK_SIZE, BLOCK_SIZE);
-    for (int i = 0; i < size; ++i) {
+    for (long i = 0; i < size; ++i) {
         auto N_i = accessor_A[i];
         auto M_i = accessor_B[i];
 

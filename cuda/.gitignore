@@ -1,3 +1,4 @@
 build/
 dist/
 segment_mm.egg-info/
+__pycache__/
