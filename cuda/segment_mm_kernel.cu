@@ -41,9 +41,9 @@ __global__ void tiled_mm_kernel(
             As[row][col] = a[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];
         
         if ((BLOCK_SIZE*k + row) >= D)
-            As[row][col] = 0.0f;
+            Bs[row][col] = 0.0f;
         else 
-            As[row][col] = b[M*BLOCK_SIZE*k + BLOCK_SIZE*block_col + row*M + col];
+            Bs[row][col] = b[M*BLOCK_SIZE*k + BLOCK_SIZE*block_col + row*M + col];
 
         __syncthreads();
         #pragma unroll
