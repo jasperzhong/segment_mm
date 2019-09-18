@@ -85,7 +85,7 @@ torch::Tensor segment_mm_cuda_forward(
         auto M_i = accessor_B[i];
         sum += N_i * M_i;
     }
-    auto C = torch::zeros({sum});
+    auto C = torch::zeros({sum}, mat_A.options());
 
     // loop k times, launch k kernels 
     long start_A = 0, start_B = 0, start_C = 0;    
