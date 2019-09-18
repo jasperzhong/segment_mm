@@ -51,7 +51,7 @@ def bmm_segment_mm(mat_A, mat_B, segment_id_A, segment_id_B):
     Cs = []
     start_C = 0
     for i, (N_i, M_i) in enumerate(zip(count_A, count_B)):
-        Cs.append(C_padded[i][:N_i][:M_i].flatten())
+        Cs.append(C_padded[i].narrow(0, 0, N_i).narrow(1, 0, M_i).flatten())
     
     return torch.cat(Cs, 0)
 

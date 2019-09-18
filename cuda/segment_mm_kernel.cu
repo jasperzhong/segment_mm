@@ -9,6 +9,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#include <iostream>
+
 #include <vector>
 
 // hyper parameter 
@@ -57,6 +59,93 @@ __global__ void tiled_mm_kernel(
         c[M*BLOCK_SIZE*block_row + BLOCK_SIZE*block_col + row*M + col] = temp;
 }
 
+// a should be tranposed
+template <typename scalar_t> 
+__global__ void tiled_mm_kernel_with_transpose_1(
+    const scalar_t* __restrict__ a, 
+    const scalar_t* __restrict__ b,
+    scalar_t* __restrict__ c,
+    long N, long M, long D) {
+    __shared__ scalar_t As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ scalar_t Bs[BLOCK_SIZE][BLOCK_SIZE];
+    
+    long block_row = blockIdx.x;
+    long block_col = blockIdx.y;
+
+    scalar_t temp = 0.0f;
+    long row = threadIdx.x;
+    long col = threadIdx.y;
+
+    #pragma unroll
+    for (long k = 0; k <= (D / BLOCK_SIZE); ++k) {
+        // load 
+        if ((BLOCK_SIZE*k + col) >= D)
+            As[col][row] = 0.0f;
+        else 
+            As[col][row] = a[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];
+        
+        if ((BLOCK_SIZE*k + col) >= D)
+            Bs[col][row] = 0.0f;
+        else 
+            Bs[col][row] = b[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];  
+
+        __syncthreads();
+        #pragma unroll
+        for (long d = 0; d < BLOCK_SIZE; ++d)
+            temp += As[row][d]*Bs[d][col];
+        
+        __syncthreads();
+    }
+
+    if ((BLOCK_SIZE*block_col + col) < M && (BLOCK_SIZE*block_row + row) < N)
+        c[M*BLOCK_SIZE*block_row + BLOCK_SIZE*block_col + row*M + col] = temp;
+}
+
+
+// b should be tranposed
+template <typename scalar_t> 
+__global__ void tiled_mm_kernel_with_transpose_2(
+    const scalar_t* __restrict__ a, 
+    const scalar_t* __restrict__ b,
+    scalar_t* __restrict__ c,
+    long N, long M, long D) {
+    __shared__ scalar_t As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ scalar_t Bs[BLOCK_SIZE][BLOCK_SIZE];
+    
+    long block_row = blockIdx.x;
+    long block_col = blockIdx.y;
+
+    scalar_t temp = 0.0f;
+    long row = threadIdx.x;
+    long col = threadIdx.y;
+
+    #pragma unroll
+    for (long k = 0; k <= (D / BLOCK_SIZE); ++k) {
+        // load 
+        if ((BLOCK_SIZE*k + col) >= D)
+            As[row][col] = 0.0f;
+        else 
+            As[row][col] = a[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];
+        
+        if ((BLOCK_SIZE*k + col) >= D)
+            Bs[col][row] = 0.0f;
+        else 
+            Bs[col][row] = b[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];  
+
+        __syncthreads();
+        #pragma unroll
+        for (long d = 0; d < BLOCK_SIZE; ++d)
+            temp += As[row][d]*Bs[d][col];
+        
+        __syncthreads();
+    }
+
+    if ((BLOCK_SIZE*block_col + col) < M && (BLOCK_SIZE*block_row + row) < N)
+        c[M*BLOCK_SIZE*block_row + BLOCK_SIZE*block_col + row*M + col] = temp;
+}
+
+
+
 }
 
 
@@ -95,14 +184,14 @@ torch::Tensor segment_mm_cuda_forward(
         auto M_i = accessor_B[i];
 
         auto A_i = mat_A.narrow(0, start_A, N_i); // [N_i, D]
-        auto B_i = mat_B.narrow(0, start_B, M_i).transpose(0, 1); // [D, M_i] 
+        auto B_i = mat_B.narrow(0, start_B, M_i); // [M_i, D] 
         
         dim3 dim_grid((N_i + BLOCK_SIZE - 1) / BLOCK_SIZE, 
                         (M_i + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_forward", ([&]{
-           tiled_mm_kernel<scalar_t><<<dim_grid, dim_block, 0, stream>>>(
+            tiled_mm_kernel_with_transpose_2<scalar_t><<<dim_grid, dim_block, 0, stream>>>(
                A_i.data<scalar_t>(),
                B_i.data<scalar_t>(),
                C.narrow(0, start_C, N_i*M_i).data<scalar_t>(),
@@ -127,14 +216,16 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
     const long M = mat_B.size(0);
     const long D = mat_A.size(1);
 
-    auto dA = torch::zeros({N, D});
-    auto dB = torch::zeros({M, D});
+    auto dA = torch::zeros({N, D}, grad_c.options());
+    auto dB = torch::zeros({M, D}, grad_c.options());
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
-    // cudaSetDevice(mat_A.get_device());
-    // cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    cudaSetDevice(mat_A.get_device());
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    auto count_A = segment_id_A.bincount();
-    auto count_B = segment_id_B.bincount();
+    auto count_A = segment_id_A.bincount().cpu();
+    auto count_B = segment_id_B.bincount().cpu();
+    auto accessor_A = count_A.accessor<long, 1>();
+    auto accessor_B = count_B.accessor<long, 1>();
 
     // calculate dA & dB
     long size = count_A.size(0);
@@ -142,13 +233,13 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
     long start_dA = 0, start_dB = 0, start_dC = 0;
     dim3 dim_block(BLOCK_SIZE, BLOCK_SIZE);
     for (long i = 0; i < size; ++i) {
-        auto N_i = count_A[i].item().toLong();
-        auto M_i = count_B[i].item().toLong();
+        auto N_i = accessor_A[i];
+        auto M_i = accessor_B[i];
 
-        // dA_i = dC_i @ dB_i
+        // dA_i = dC_i @ B_i
         auto dA_i = dA.narrow(0, start_dA, N_i);
         auto B_i = mat_B.narrow(0, start_B, M_i);
-        auto dC_i_0 = grad_c.narrow(0, start_dC, N_i * M_i);
+        auto dC_i = grad_c.narrow(0, start_dC, N_i * M_i);
 
         // [N_i, M_i] @ [M_i, D] -> [N_i, D]
         dim3 dim_grid_0((N_i + BLOCK_SIZE - 1) / BLOCK_SIZE, 
@@ -156,8 +247,8 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
 
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_backward_0", ([&]{
-            tiled_mm_kernel<scalar_t><<<dim_block, dim_grid_0>>>(
-                dC_i_0.data<scalar_t>(),
+            tiled_mm_kernel<scalar_t><<<dim_block, dim_grid_0, 0, stream>>>(
+                dC_i.data<scalar_t>(),
                 B_i.data<scalar_t>(),
                 dA_i.data<scalar_t>(),
                 N_i, D, M_i
@@ -170,18 +261,17 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
         // dB_i = dC_i^T @ A_i
         auto A_i = mat_A.narrow(0, start_A, N_i);
         auto dB_i = dB.narrow(0, start_dB, M_i);
-        auto dC_i_1 = grad_c.narrow(0, start_dC, N_i * M_i).view({N_i, M_i}).transpose(0, 1).flatten();
 
-        // [N_i, M_i] @ [M_i, D] -> [N_i, D]
+        // [N_i, M_i]^T @ [N_i, D] -> [M_i, D]
         dim3 dim_grid_1((M_i + BLOCK_SIZE - 1) / BLOCK_SIZE, 
                         (D + BLOCK_SIZE - 1) / BLOCK_SIZE);
         
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_backward_1", ([&]{
-            tiled_mm_kernel<scalar_t><<<dim_block, dim_grid_1>>>(
-                dC_i_1.data<scalar_t>(),
-                dB_i.data<scalar_t>(),
+            tiled_mm_kernel_with_transpose_1<scalar_t><<<dim_block, dim_grid_1>>>(
+                dC_i.data<scalar_t>(),
                 A_i.data<scalar_t>(),
+                dB_i.data<scalar_t>(),
                 M_i, D, N_i
             );
         }));
