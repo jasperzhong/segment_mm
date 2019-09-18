@@ -14,5 +14,9 @@ segment_id_b = torch.tensor([
 
 print(a)
 print(b)
+print(segment_id_a.shape)
+print(segment_id_b.shape)
+print(segment_id_a.bincount())
+print(segment_id_b.bincount())
 print(segment_id_a.type())
 print(segment_mm.forward(a, b, segment_id_a, segment_id_b))

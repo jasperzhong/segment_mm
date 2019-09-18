@@ -69,14 +69,14 @@ torch::Tensor segment_mm_cuda_forward(
     const long M = mat_B.size(0);
     const long D = mat_A.size(1);
 
-    // cudaSetDevice(mat_A.get_device());
-    // cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-    auto count_A = segment_id_A.bincount();
-    auto count_B = segment_id_B.bincount();
+    cudaSetDevice(mat_A.get_device());
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    
+    auto count_A = segment_id_A.bincount().cpu();
+    auto count_B = segment_id_B.bincount().cpu();
     auto accessor_A = count_A.accessor<long, 1>();
     auto accessor_B = count_B.accessor<long, 1>();
-    
+
     // allocate C
     long sum = 0;
     const long size = count_A.size(0);
@@ -93,7 +93,7 @@ torch::Tensor segment_mm_cuda_forward(
     for (long i = 0; i < size; ++i) {
         auto N_i = accessor_A[i];
         auto M_i = accessor_B[i];
-        
+
         auto A_i = mat_A.narrow(0, start_A, N_i); // [N_i, D]
         auto B_i = mat_B.narrow(0, start_B, M_i).transpose(0, 1); // [D, M_i] 
         
@@ -102,7 +102,7 @@ torch::Tensor segment_mm_cuda_forward(
 
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_forward", ([&]{
-           tiled_mm_kernel<scalar_t><<<dim_grid, dim_block>>>(
+           tiled_mm_kernel<scalar_t><<<dim_grid, dim_block, 0, stream>>>(
                A_i.data<scalar_t>(),
                B_i.data<scalar_t>(),
                C.narrow(0, start_C, N_i*M_i).data<scalar_t>(),
@@ -135,8 +135,6 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
 
     auto count_A = segment_id_A.bincount();
     auto count_B = segment_id_B.bincount();
-    auto accessor_A = count_A.accessor<long, 1>();
-    auto accessor_B = count_B.accessor<long, 1>();
 
     // calculate dA & dB
     long size = count_A.size(0);
@@ -144,8 +142,8 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
     long start_dA = 0, start_dB = 0, start_dC = 0;
     dim3 dim_block(BLOCK_SIZE, BLOCK_SIZE);
     for (long i = 0; i < size; ++i) {
-        auto N_i = accessor_A[i];
-        auto M_i = accessor_B[i];
+        auto N_i = count_A[i].item().toLong();
+        auto M_i = count_B[i].item().toLong();
 
         // dA_i = dC_i @ dB_i
         auto dA_i = dA.narrow(0, start_dA, N_i);
