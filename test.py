@@ -32,6 +32,3 @@ def test_backward():
     x.backward()
     
     
-
-if __name__=="__main__":
-    test_backward()
