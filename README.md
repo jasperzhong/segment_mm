@@ -46,11 +46,14 @@ tensor([ 20., 164., 268.], device='cuda:0')
 # Benchmark
 
 **Configurations**
+
 | M | N | K | D |
 | --- | --- | --- | ---- |
 |512 |512 |32| 100 |
 
+
 **Results**
+
 |  | forward(ms) | backward(ms) |
 | --- | --- | --- |
 | naive|6.437 |6.734 |
