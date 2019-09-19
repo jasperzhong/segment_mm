@@ -85,9 +85,9 @@ __global__ void tiled_mm_kernel_with_transpose_1(
             As[col][row] = a[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];
         
         if ((BLOCK_SIZE*k + col) >= D)
-            Bs[col][row] = 0.0f;
+            Bs[row][col] = 0.0f;
         else 
-            Bs[col][row] = b[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];  
+            Bs[row][col] = b[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];  
 
         __syncthreads();
         #pragma unroll

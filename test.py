@@ -28,7 +28,8 @@ def test_backward():
     segment_id_b = torch.tensor([0]*5 + [1]*5 + [2]*5).cuda()
 
     c = model(a, b, segment_id_a, segment_id_b)
-    c.backward()
+    x = sum(c)
+    x.backward()
     
     
 
