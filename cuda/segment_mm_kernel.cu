@@ -79,15 +79,15 @@ __global__ void tiled_mm_kernel_with_transpose_1(
     #pragma unroll
     for (long k = 0; k <= (D / BLOCK_SIZE); ++k) {
         // load 
-        if ((BLOCK_SIZE*k + col) >= D)
+        if ((BLOCK_SIZE*k + row) >= D)
             As[col][row] = 0.0f;
         else 
-            As[col][row] = a[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];
+            As[col][row] = a[M*BLOCK_SIZE*k + BLOCK_SIZE*block_col + row*M + col];
         
-        if ((BLOCK_SIZE*k + col) >= D)
+        if ((BLOCK_SIZE*k + row) >= D)
             Bs[row][col] = 0.0f;
         else 
-            Bs[row][col] = b[D*BLOCK_SIZE*block_row + BLOCK_SIZE*k + row*D + col];  
+            Bs[row][col] = b[M*BLOCK_SIZE*k + BLOCK_SIZE*block_col + row*M + col];
 
         __syncthreads();
         #pragma unroll
@@ -219,7 +219,7 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
     auto dA = torch::zeros({N, D}, grad_c.options());
     auto dB = torch::zeros({M, D}, grad_c.options());
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
-    cudaSetDevice(mat_A.get_device());
+    cudaSetDevice(grad_c.get_device());
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     auto count_A = segment_id_A.bincount().cpu();
@@ -268,7 +268,7 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
         
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_backward_1", ([&]{
-            tiled_mm_kernel_with_transpose_1<scalar_t><<<dim_block, dim_grid_1>>>(
+            tiled_mm_kernel_with_transpose_1<scalar_t><<<dim_block, dim_grid_1, 0, stream>>>(
                 dC_i.data<scalar_t>(),
                 A_i.data<scalar_t>(),
                 dB_i.data<scalar_t>(),
