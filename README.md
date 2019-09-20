@@ -49,7 +49,7 @@ tensor([ 20., 164., 268.], device='cuda:0')
 
 | M | N | K | D |
 | --- | --- | --- | ---- |
-|512 |512 |32| 100 |
+|512 |512 |32| 300 |
 
 
 **Results**
@@ -59,10 +59,6 @@ tensor([ 20., 164., 268.], device='cuda:0')
 | naive|6.437 |6.734 |
 | bmm |15.656 |7.306 |
 |cuda |**0.694** |**1.431** |
-
-# Known Bugs
-
-- [ ] When D is large(e.g. > 300), an error will occur in backward function of cuda version `RuntimeError: CUDA error: an illegal memory access was encountered`
 
 # Reference 
 

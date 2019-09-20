@@ -12,7 +12,6 @@ class SegmentMMFunction(Function):
     
     @staticmethod
     def backward(ctx, grad_c):
-        print(grad_c)
         dA, dB = segment_mm.backward(grad_c.contiguous(), *ctx.saved_variables)
         return dA, dB, None, None
 
