@@ -241,13 +241,14 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
         auto B_i = mat_B.narrow(0, start_B, M_i);
         auto dC_i = grad_c.narrow(0, start_dC, N_i * M_i);
 
+        
         // [N_i, M_i] @ [M_i, D] -> [N_i, D]
         dim3 dim_grid_0((N_i + BLOCK_SIZE - 1) / BLOCK_SIZE, 
                         (D + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_backward_0", ([&]{
-            tiled_mm_kernel<scalar_t><<<dim_block, dim_grid_0, 0, stream>>>(
+            tiled_mm_kernel<scalar_t><<<dim_grid_0, dim_block, 0, stream>>>(
                 dC_i.data<scalar_t>(),
                 B_i.data<scalar_t>(),
                 dA_i.data<scalar_t>(),
@@ -268,7 +269,7 @@ std::vector<torch::Tensor> segment_mm_cuda_backward(
         
         // async dispatch
         AT_DISPATCH_FLOATING_TYPES(mat_A.type(), "segment_mm_cuda_backward_1", ([&]{
-            tiled_mm_kernel_with_transpose_1<scalar_t><<<dim_block, dim_grid_1, 0, stream>>>(
+            tiled_mm_kernel_with_transpose_1<scalar_t><<<dim_grid_1, dim_block, 0, stream>>>(
                 dC_i.data<scalar_t>(),
                 A_i.data<scalar_t>(),
                 dB_i.data<scalar_t>(),
